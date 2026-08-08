@@ -86,7 +86,9 @@ class Driver(Protocol):
     id: str
     def capabilities(self) -> Capabilities        # kinds, features, limits
     def validate(self, post: Post) -> list[str]   # human-readable problems
-    def publish(self, post: Post, ctx: Ctx) -> Receipt
+    def publish(self, post: Post, attempt: Attempt, ctx: Ctx) -> Receipt | Pending
+    def poll(self, pending: Pending, ctx: Ctx) -> Receipt | Pending | Failed
+    def lookup(self, attempt: Attempt, ctx: Ctx) -> Found | NotFound | Unknown
     def edit(self, receipt: Receipt, changes: Changes, ctx: Ctx) -> Receipt   # optional
     def delete(self, receipt: Receipt, ctx: Ctx) -> None                      # optional
     def insights(self, receipts: list[Receipt], ctx: Ctx) -> list[Metric]
