@@ -15,9 +15,9 @@ from urllib.request import Request, urlopen
 
 
 GRAPH_API_BASE_URL = "https://graph.instagram.com/v23.0"
-DEFAULT_INBOUND_MEDIA_ROOT = Path("/srv/REDACTED-host-app/shared/inbound-media")
-DEFAULT_PUBLIC_MEDIA_ROOT = Path("/srv/REDACTED-host-app/shared/public-media")
-DEFAULT_INSTANCE_PATH = Path("/srv/REDACTED-host-app/shared/instance")
+DEFAULT_INBOUND_MEDIA_ROOT = Path("/srv/app/shared/inbound-media")
+DEFAULT_PUBLIC_MEDIA_ROOT = Path("/srv/app/shared/public-media")
+DEFAULT_INSTANCE_PATH = Path("/srv/app/shared/instance")
 SIGNED_URL_TTL_SECONDS = 3600
 STATUS_MAX_POLLS = 20
 STATUS_POLL_INTERVAL_SECONDS = 3
@@ -61,17 +61,17 @@ def configured_media_roots(
 ) -> dict[str, Path]:
     configured_inbound = (
         inbound_root
-        or os.environ.get("OPS_MEDIA_INBOUND_DIR")
+        or os.environ.get("REF_MEDIA_INBOUND_DIR")
         or DEFAULT_INBOUND_MEDIA_ROOT
     )
     configured_public = (
         public_root
-        or os.environ.get("OPS_PUBLIC_MEDIA_ROOT")
+        or os.environ.get("REF_PUBLIC_MEDIA_ROOT")
         or DEFAULT_PUBLIC_MEDIA_ROOT
     )
     configured_instance = (
         instance_path
-        or os.environ.get("OPS_INSTANCE_PATH")
+        or os.environ.get("REF_INSTANCE_PATH")
         or DEFAULT_INSTANCE_PATH
     )
     return {
@@ -107,7 +107,7 @@ def canonical_signed_path(root_name: str, relative_path: str | PurePosixPath) ->
 
 def sign_media_path(path: str, expires: int, secret: str) -> str:
     if not secret:
-        raise InstagramPublishError("OPS_MEDIA_URL_SECRET is required for local media.")
+        raise InstagramPublishError("REF_MEDIA_URL_SECRET is required for local media.")
     message = f"{path}\n{expires}".encode("utf-8")
     return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
@@ -122,7 +122,7 @@ def verify_media_signature(path: str, expires: int, signature: str, secret: str)
 def validate_public_base_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise InstagramPublishError("OPS_PUBLIC_BASE_URL must be an absolute HTTP(S) URL.")
+        raise InstagramPublishError("REF_PUBLIC_BASE_URL must be an absolute HTTP(S) URL.")
     return value.rstrip("/")
 
 
@@ -227,8 +227,8 @@ def resolve_media_url(
         raise InstagramPublishError("Media must be a local path or an HTTP(S) URL.")
     return build_signed_media_url(
         value,
-        public_base_url=public_base_url or required_env("OPS_PUBLIC_BASE_URL"),
-        secret=media_url_secret or required_env("OPS_MEDIA_URL_SECRET"),
+        public_base_url=public_base_url or required_env("REF_PUBLIC_BASE_URL"),
+        secret=media_url_secret or required_env("REF_MEDIA_URL_SECRET"),
         roots=roots,
         now=now,
     )
@@ -370,7 +370,7 @@ def _planned_call(method: str, url: str, parameters: dict, **extra) -> dict:
     return {
         "method": method,
         "url": url,
-        "parameters": {**parameters, "access_token": "<OPS_IG_PUBLISH_TOKEN>"},
+        "parameters": {**parameters, "access_token": "<REF_IG_PUBLISH_TOKEN>"},
         **extra,
     }
 

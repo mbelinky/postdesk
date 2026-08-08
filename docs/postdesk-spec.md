@@ -28,10 +28,21 @@ zero traces of any particular business.
 4. **Own store.** One SQLite file (path via `--store` / `POSTDESK_STORE`),
    SQLAlchemy models: posts, receipts, metrics. Every row carries `tenant`.
    `external_ref` gives callers idempotency.
-5. **At most once.** Claim-before-publish with a claim token; a crash after
-   claim leaves a claimed row that `reconcile` resolves against the network
-   (receipt exists remotely → record it; nothing remote → release the claim).
-   Never auto-retry a publish that may have landed.
+5. **At most once is a protocol, not a slogan** (panel-mandated design):
+   - Claiming takes a **lease** (claim token + expiry), atomically.
+   - Every publish is a **durable publish attempt**: a row written before the
+     first network call, updated write-ahead with every remote identifier as
+     it is minted (container ids, upload session ids, post ids). A crash at
+     any point leaves evidence.
+   - Drivers implement `lookup(attempt, ctx) -> found(receipt) | not_found |
+     unknown` (tri-state, using external_ref and/or partial ids).
+   - `reconcile`: for expired-lease or in-doubt attempts, call `lookup`.
+     `found` → record the receipt. `not_found` (definitive) → release for
+     rescheduling. `unknown` → mark **in_doubt**, notify, and hold for
+     operator triage. **Fail closed**: nothing in_doubt is ever auto-retried.
+   - Async kinds (Instagram reels, Facebook video) use `publish -> pending
+     handle` plus `poll(handle)`; the core owns the polling loop and per-kind
+     timeouts. Synchronous kinds return receipts directly.
 6. **JSON everywhere.** Every command takes/returns JSON-friendly output with
    `--json`; errors are structured (`ok:false, error:{kind, detail, path}`)
    with distinct exit codes for: invalid input (2), config/credential
@@ -63,7 +74,10 @@ postdesk describe  --json                 # tool self-description for agents
 
 `queue add` validates against the driver's capabilities immediately (an
 Instagram `link` post or a Facebook `story` is rejected at add time with the
-capability named, not at publish time).
+capability named, not at publish time). **Cardinality is per kind** (panel):
+`--media` count and caption presence are governed by the kind — a Facebook
+`link`/text post takes zero media; a story takes one medium and no caption;
+albums/carousels take 2..10. The generic flags stay; the validators differ.
 
 ## Driver interface
 
@@ -92,9 +106,9 @@ creation; publishing-quota check exposed in capabilities; media insights
 `ig_user_id` + token env ref. Known impossibilities stay impossible and are
 absent from capabilities: caption edit, location, music, pinning.
 
-Reference for exact call shapes: the operator supplies a mirror of a working
-implementation in `docs/reference/` (vendored, to be treated as prior art —
-port the flows, do not import the code).
+Reference for exact call shapes: `docs/reference/` (vendored prior art —
+port the flows, never import the code). The directory is **excluded from any
+distribution** (dev-only) and must not be assumed present at runtime.
 
 ## Facebook driver (new)
 
@@ -109,8 +123,9 @@ ref per tenant):
 - `edit`: `POST /{post-id}` (message) — Facebook allows it; capability
   advertised.
 - `delete`: `DELETE /{post-id}`.
-- insights: post impressions, reach, clicks, reactions (whatever the token
-  scope returns; degrade gracefully and record what was obtained).
+- insights: record raw per-network metrics exactly as returned (name, value,
+  fetched_at). **No cross-network metric normalization in v1** (panel: defer
+  until fixture-backed; metric names drift).
 The queue owns scheduling; Facebook's native `scheduled_publish_time` is NOT
 used (one scheduler, one truth).
 

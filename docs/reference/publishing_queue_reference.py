@@ -238,17 +238,17 @@ def parse_notify_template(value: str) -> list[str] | None:
     try:
         argv = shlex.split(value)
     except ValueError as exc:
-        raise PublishingQueueError("OPS_PUBLISH_NOTIFY_CMD is not valid shell-style argv.") from exc
+        raise PublishingQueueError("REF_PUBLISH_NOTIFY_CMD is not valid shell-style argv.") from exc
     if argv.count("{message}") != 1:
         raise PublishingQueueError(
-            "OPS_PUBLISH_NOTIFY_CMD must contain exactly one standalone {message} argument."
+            "REF_PUBLISH_NOTIFY_CMD must contain exactly one standalone {message} argument."
         )
     return argv
 
 
 def notify(message: str, *, template: str | None = None) -> bool:
     argv = parse_notify_template(
-        os.environ.get("OPS_PUBLISH_NOTIFY_CMD", "") if template is None else template
+        os.environ.get("REF_PUBLISH_NOTIFY_CMD", "") if template is None else template
     )
     if argv is None:
         return False
@@ -281,13 +281,13 @@ def _emit_notification(notifier: Callable[[str], object], message: str) -> None:
 def _bounded_error(exc: BaseException) -> str:
     value = " ".join(str(exc).split()) or exc.__class__.__name__
     secret_names = {
-        "OPS_META_ADS_TOKEN",
-        "OPS_MEDIA_URL_SECRET",
-        "OPS_IG_PUBLISH_TOKEN",
+        "REF_META_ADS_TOKEN",
+        "REF_MEDIA_URL_SECRET",
+        "REF_IG_PUBLISH_TOKEN",
         *(
             name
             for name in os.environ
-            if name.startswith("OPS_IG_") and name.endswith("_PUBLISH_TOKEN")
+            if name.startswith("REF_IG_") and name.endswith("_PUBLISH_TOKEN")
         ),
     }
     for name in secret_names:
@@ -328,7 +328,7 @@ def run_due_posts(
     if limit < 1:
         raise PublishingQueueError("Queue run limit must be positive.")
     if notifier is notify:
-        parse_notify_template(os.environ.get("OPS_PUBLISH_NOTIFY_CMD", ""))
+        parse_notify_template(os.environ.get("REF_PUBLISH_NOTIFY_CMD", ""))
     claim_now = now or utcnow_naive()
     engine = session.get_bind()
     candidate_ids = list(
