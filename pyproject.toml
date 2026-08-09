@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postdesk"
+version = "0.2.0"
+description = "A standalone, tenant-neutral social publishing desk"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "SQLAlchemy>=2.0,<3",
+]
+
+[project.scripts]
+postdesk = "postdesk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+

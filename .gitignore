@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+*.pyc
+._build.log
+postdesk.sqlite3
+postdesk.sqlite3-shm
+postdesk.sqlite3-wal
