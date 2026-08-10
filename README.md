@@ -6,10 +6,10 @@ The core is network-neutral. Each network lives behind one driver interface. Ten
 
 ## Quickstart
 
-Python 3.14 is required.
+Python 3.12 or newer is required.
 
 ```bash
-python3.14 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -e .
 
 STORE_DIR="$(mktemp -d)"
