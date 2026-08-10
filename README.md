@@ -68,6 +68,7 @@ timeout_seconds = 30
 
 [channels.instagram]
 ig_user_id = "replace-me"
+expected_username = "replace-me"
 token_env = "POSTDESK_EXAMPLE_INSTAGRAM_TOKEN"
 
 [channels.facebook]

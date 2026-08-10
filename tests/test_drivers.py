@@ -7,7 +7,7 @@ import pytest
 
 from postdesk.drivers.facebook import FacebookDriver
 from postdesk.drivers.instagram import InstagramDriver
-from postdesk.errors import ApiError
+from postdesk.errors import ApiError, ConfigError
 from postdesk.http import UrlLibTransport
 from postdesk.types import AttemptData, Ctx, Found, NotFound, Pending, PostData, ReceiptData, Unknown
 
@@ -23,7 +23,7 @@ def fixture(name: str, kind: str):
 def context(*, dry_run: bool = False, channel: str = "instagram") -> tuple[Ctx, list[dict]]:
     checkpoints: list[dict] = []
     credentials = (
-        {"ig_user_id": "ig-user", "token": "fixture-token"}
+        {"ig_user_id": "ig-user", "expected_username": "fixture-account", "token": "fixture-token"}
         if channel == "instagram"
         else {"page_id": "fb-page", "token": "fixture-token"}
     )
@@ -85,7 +85,7 @@ def finish(driver, result, ctx):
 
 @pytest.mark.parametrize("kind", ["photo", "carousel", "reel", "story"])
 def test_instagram_contract_from_recorded_fixtures(kind):
-    transport = FixtureTransport(fixture("instagram", kind))
+    transport = FixtureTransport([{"user_id": "ig-user", "username": "fixture-account"}, *fixture("instagram", kind)])
     driver = InstagramDriver(transport)
     ctx, checkpoints = context(channel="instagram")
     item = post("instagram", kind)
@@ -95,6 +95,21 @@ def test_instagram_contract_from_recorded_fixtures(kind):
     assert result.external_id == f"ig-media-{kind}"
     assert any("network_started" in value for value in checkpoints)
     assert any("creation_id" in value for value in checkpoints)
+    transport.assert_consumed()
+
+
+def test_instagram_refuses_mismatched_account_before_creating_media():
+    transport = FixtureTransport([{"user_id": "ig-user", "username": "wrong-account"}])
+    driver = InstagramDriver(transport)
+    ctx, checkpoints = context(channel="instagram")
+    item = post("instagram", "photo")
+
+    with pytest.raises(ConfigError, match="belongs to @wrong-account, expected @fixture-account"):
+        driver.publish(item, AttemptData(1, "demo", item.external_ref, {}), ctx)
+
+    assert transport.calls[0]["method"] == "GET"
+    assert transport.calls[0]["url"].endswith("/me")
+    assert checkpoints == []
     transport.assert_consumed()
 
 

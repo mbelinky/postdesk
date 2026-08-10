@@ -19,6 +19,7 @@ timeout_seconds = 10
 
 [channels.instagram]
 ig_user_id = "demo-instagram-user"
+expected_username = "demo-instagram"
 token_env = "POSTDESK_DEMO_INSTAGRAM_TOKEN"
 
 [channels.facebook]
@@ -119,4 +120,3 @@ def public_config(config: TenantConfig) -> dict[str, Any]:
         "hooks": config.hooks,
         "channels": config.channels,
     }
-

@@ -75,6 +75,28 @@ class InstagramDriver:
             call["result"] = result
         return call
 
+    def _verify_account(self, ctx: Ctx, ig_user_id: str) -> None:
+        expected_username = ctx.credentials.get("expected_username", "").strip().lstrip("@").casefold()
+        if not expected_username:
+            raise ConfigError("expected_username is required.", path="channels.instagram.expected_username")
+        identity = self._call("GET", "me", {"fields": "id,user_id,username"}, ctx)
+        actual_username = str(identity.get("username") or "").strip().lstrip("@").casefold()
+        actual_ids = {
+            str(identity.get(key) or "").strip()
+            for key in ("id", "user_id")
+            if str(identity.get(key) or "").strip()
+        }
+        if actual_username != expected_username:
+            raise ConfigError(
+                f"Instagram credential belongs to @{actual_username or 'unknown'}, expected @{expected_username}.",
+                path="channels.instagram.expected_username",
+            )
+        if actual_ids and ig_user_id not in actual_ids:
+            raise ConfigError(
+                "Instagram credential user ID does not match ig_user_id.",
+                path="channels.instagram.ig_user_id",
+            )
+
     def _plan(self, post: PostData, urls: list[str], ig_user_id: str) -> list[dict[str, Any]]:
         calls: list[dict[str, Any]] = []
         if post.kind == "carousel":
@@ -121,6 +143,8 @@ class InstagramDriver:
         ig_user_id = ctx.credentials.get("ig_user_id", "").strip()
         if not ig_user_id:
             raise ConfigError("ig_user_id is required.", path="channels.instagram.ig_user_id")
+        if not ctx.dry_run:
+            self._verify_account(ctx, ig_user_id)
         urls = [ctx.media_url(item) for item in post.media]
         if ctx.dry_run:
             calls = self._plan(post, urls, ig_user_id)
