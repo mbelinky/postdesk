@@ -197,6 +197,30 @@ def approve_post(session: Session, post_id: int) -> Post:
     return row
 
 
+def retry_failed_post(session: Session, post_id: int) -> Post:
+    """Release a definitive failure only when no provider object was recorded."""
+    row = get_post(session, post_id)
+    if row.status != "failed" or row.claim_token:
+        raise ClaimConflict("Only an unclaimed failed post can be retried.", path="post_id")
+    if session.scalar(select(Receipt).where(Receipt.post_id == post_id)) is not None:
+        raise ClaimConflict("A post with a receipt cannot be retried.", path="post_id")
+    attempt = session.scalar(
+        select(PublishAttempt).where(PublishAttempt.post_id == post_id).order_by(PublishAttempt.id.desc())
+    )
+    if attempt is None or attempt.state != "failed" or attempt.pending_json:
+        raise ClaimConflict("The failed attempt is not safe to retry.", path="post_id")
+    remote = json.loads(attempt.remote_ids_json)
+    provider_keys = set(remote) - {"network_started", "phase"}
+    if provider_keys:
+        raise ClaimConflict("The failed attempt recorded a provider object and cannot be blindly retried.", path="post_id")
+    row.status = "approved"
+    row.error = None
+    row.notify_error = None
+    row.updated_at = utcnow()
+    session.commit()
+    return row
+
+
 def cancel_post(session: Session, post_id: int) -> Post:
     row = get_post(session, post_id)
     if row.status not in {"draft", "approved"} or row.claim_token:

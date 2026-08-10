@@ -22,6 +22,7 @@ from .core import (
     list_posts,
     pull_insights,
     reconcile,
+    retry_failed_post,
     run_due,
     serialize_metric,
     serialize_post,
@@ -90,6 +91,10 @@ def build_parser() -> Parser:
     _store_arg(queue_approve)
     queue_approve.add_argument("post_id", type=int)
     queue_approve.add_argument("--json", action="store_true")
+    queue_retry = queue_commands.add_parser("retry")
+    _store_arg(queue_retry)
+    queue_retry.add_argument("post_id", type=int)
+    queue_retry.add_argument("--json", action="store_true")
     queue_cancel = queue_commands.add_parser("cancel")
     _store_arg(queue_cancel)
     queue_cancel.add_argument("post_id", type=int)
@@ -217,6 +222,8 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 return {"ok": True, "post": serialize_post(get_post(session, args.post_id), session=session)}, 0
             if args.queue_command == "approve":
                 return {"ok": True, "post": serialize_post(approve_post(session, args.post_id))}, 0
+            if args.queue_command == "retry":
+                return {"ok": True, "post": serialize_post(retry_failed_post(session, args.post_id))}, 0
             if args.queue_command == "cancel":
                 return {"ok": True, "post": serialize_post(cancel_post(session, args.post_id))}, 0
             rows = list_posts(session, status=args.status, tenant=args.tenant)
@@ -321,7 +328,7 @@ def describe_payload(drivers: dict[str, Any]) -> dict[str, Any]:
         "commands": {
             "init": "Create the SQLite store and demo tenant.",
             "tenant": ["add", "list", "show"],
-            "queue": ["add", "list", "show", "approve", "cancel", "preview"],
+            "queue": ["add", "list", "show", "approve", "retry", "cancel", "preview"],
             "run": "Publish due approved posts.",
             "reconcile": "Resolve expired leases and uncertain attempts without blind retry.",
             "publish": "Publish immediately without an approval gate.",

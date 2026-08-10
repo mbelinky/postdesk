@@ -5,11 +5,13 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from postdesk.config import DEMO_CONFIG
-from postdesk.core import add_post, approve_post, reconcile, run_due, utcnow
+from postdesk.core import add_post, approve_post, reconcile, retry_failed_post, run_due, utcnow
+from postdesk.errors import ClaimConflict
 from postdesk.models import Post, PublishAttempt, Receipt
 from postdesk.store import initialize
 from postdesk.types import (
@@ -108,6 +110,40 @@ def test_parallel_workers_claim_once_and_reconcile_is_idempotent(tmp_path):
     assert reconcile(engine, store, {"fake": driver}) == {"ok": True, "checked": 0, "results": []}
 
 
+def test_retry_failed_post_requires_no_provider_object(tmp_path):
+    store, engine = make_store(tmp_path)
+    driver = FakeDriver(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        post_id = enqueue(session, store, driver)
+        row = session.get(Post, post_id)
+        row.status = "failed"
+        row.error = "media fetch failed"
+        attempt = PublishAttempt(
+            tenant="demo",
+            post_id=post_id,
+            claim_token="failed-attempt",
+            external_ref=row.external_ref,
+            state="failed",
+            remote_ids_json=json.dumps({"network_started": True, "phase": "container"}),
+            pending_json=None,
+            error=row.error,
+            started_at=utcnow(),
+            updated_at=utcnow(),
+            completed_at=utcnow(),
+        )
+        session.add(attempt)
+        session.commit()
+        retried = retry_failed_post(session, post_id)
+        assert retried.status == "approved"
+        assert retried.error is None
+
+        retried.status = "failed"
+        attempt.remote_ids_json = json.dumps({"network_started": True, "creation_id": "provider-1"})
+        session.commit()
+        with pytest.raises(ClaimConflict, match="provider object"):
+            retry_failed_post(session, post_id)
+
+
 def test_external_ref_is_idempotent(tmp_path):
     store, engine = make_store(tmp_path)
     driver = FakeDriver(engine)
@@ -170,4 +206,3 @@ def test_reconcile_unknown_holds_in_doubt(tmp_path, monkeypatch):
     assert result["results"] == [{"id": post_id, "outcome": "in_doubt", "detail": "fixture lookup was inconclusive"}]
     with Session(engine) as session:
         assert session.get(Post, post_id).status == "in_doubt"
-
