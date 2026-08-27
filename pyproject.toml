@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postdesk"
+version = "0.2.0"
+description = "A standalone, tenant-neutral social publishing desk"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+  "SQLAlchemy>=2.0,<3",
+]
+
+[project.urls]
+Homepage = "https://mbelinky.github.io/#postdesk"
+Repository = "https://github.com/mbelinky/postdesk"
+Issues = "https://github.com/mbelinky/postdesk/issues"
+
+[project.scripts]
+postdesk = "postdesk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

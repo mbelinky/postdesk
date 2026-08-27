@@ -1,0 +1,13 @@
+# Environment variable names only. Never put secrets in this file.
+[hooks]
+host_cmd = []
+notify_cmd = []
+timeout_seconds = 10
+
+[channels.instagram]
+ig_user_id = "demo-instagram-user"
+token_env = "POSTDESK_DEMO_INSTAGRAM_TOKEN"
+
+[channels.facebook]
+page_id = "demo-facebook-page"
+token_env = "POSTDESK_DEMO_FACEBOOK_TOKEN"
