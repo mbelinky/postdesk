@@ -113,6 +113,30 @@ def test_instagram_refuses_mismatched_account_before_creating_media():
     transport.assert_consumed()
 
 
+def test_instagram_system_user_token_uses_the_facebook_graph_host():
+    transport = FixtureTransport([{"id": "ig-user", "username": "fixture-account"}, *fixture("instagram", "photo")])
+    driver = InstagramDriver(transport)
+    ctx, checkpoints = context(channel="instagram")
+    ctx.credentials["graph_host"] = "graph.facebook.com"
+    item = post("instagram", "photo")
+    result = finish(driver, driver.publish(item, AttemptData(1, "demo", item.external_ref, {}), ctx), ctx)
+    assert isinstance(result, ReceiptData)
+    assert transport.calls[0]["method"] == "GET"
+    assert transport.calls[0]["url"] == "https://graph.facebook.com/v23.0/ig-user"
+    assert all(call["url"].startswith("https://graph.facebook.com/v23.0/") for call in transport.calls)
+    transport.assert_consumed()
+
+    dry_ctx, _ = context(dry_run=True, channel="instagram")
+    dry_ctx.credentials["graph_host"] = "graph.facebook.com"
+    planned = InstagramDriver(FixtureTransport([])).publish(item, AttemptData(2, "demo", item.external_ref, {}), dry_ctx)
+    assert all(call["url"].startswith("https://graph.facebook.com/v23.0/") for call in planned.raw["api_calls"])
+
+    bad_ctx, _ = context(channel="instagram")
+    bad_ctx.credentials["graph_host"] = "graph.example.com"
+    with pytest.raises(ConfigError, match="graph_host"):
+        InstagramDriver(FixtureTransport([])).publish(item, AttemptData(3, "demo", item.external_ref, {}), bad_ctx)
+
+
 @pytest.mark.parametrize("kind", ["text", "link", "photo", "album", "video"])
 def test_facebook_contract_from_recorded_fixtures(kind):
     transport = FixtureTransport(fixture("facebook", kind))

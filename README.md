@@ -78,7 +78,7 @@ token_env = "POSTDESK_EXAMPLE_FACEBOOK_TOKEN"
 
 `host_cmd` and `notify_cmd` are argument arrays, not shell commands. Placeholders must be standalone arguments. The host hook must print one public HTTP(S) URL. A host failure stops publishing. A notify failure is stored on the post and never rolls back a publish or reconciliation decision.
 
-Live publishing resolves the token from `token_env`. Dry-run substitutes a redacted token marker. Drivers receive resolved credentials and hooks through the core context; they do not read files or environment variables.
+Live publishing resolves the token from `token_env`. An Instagram channel may set `graph_host = "graph.facebook.com"` when its token is a Meta system-user or Facebook-login token (`EAA…`); the default `graph.instagram.com` needs an Instagram-login token (`IGA…`). On the Facebook host the account check reads the Instagram user node instead of `/me`. Dry-run substitutes a redacted token marker. Drivers receive resolved credentials and hooks through the core context; they do not read files or environment variables.
 
 ## Command surface
 
