@@ -7,3 +7,4 @@ __pycache__/
 postdesk.sqlite3
 postdesk.sqlite3-shm
 postdesk.sqlite3-wal
+.DS_Store
