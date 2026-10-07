@@ -22,6 +22,23 @@ from ..types import (
 from .common import common_validation, media_type
 
 BASE_URL = "https://graph.instagram.com/v23.0"
+FACEBOOK_HOST = "graph.facebook.com"
+INSTAGRAM_HOST = "graph.instagram.com"
+
+
+def graph_host(credentials: dict[str, str]) -> str:
+    """Tenant-selected Graph host. Instagram-login tokens (IGA…) work only on
+    graph.instagram.com; Meta system-user or Facebook-login tokens (EAA…) work
+    only on graph.facebook.com against the same Instagram user id."""
+    host = str(credentials.get("graph_host") or "").strip().lower().removeprefix("https://").rstrip("/")
+    if not host:
+        return INSTAGRAM_HOST
+    if host not in (INSTAGRAM_HOST, FACEBOOK_HOST):
+        raise ConfigError(
+            f"graph_host must be {INSTAGRAM_HOST} or {FACEBOOK_HOST}.",
+            path="channels.instagram.graph_host",
+        )
+    return host
 METRICS = ("views", "reach", "likes", "comments", "saves")
 
 
@@ -63,12 +80,13 @@ class InstagramDriver:
 
     def _call(self, method: str, path: str, parameters: dict[str, Any], ctx: Ctx) -> dict[str, Any]:
         values = {**parameters, "access_token": ctx.credentials["token"]}
-        return self.transport.request(method, f"{BASE_URL}/{path.lstrip('/')}", values, timeout=ctx.timeout_seconds)
+        url = f"https://{graph_host(ctx.credentials)}/v23.0/{path.lstrip('/')}"
+        return self.transport.request(method, url, values, timeout=ctx.timeout_seconds)
 
-    def _planned(self, method: str, path: str, parameters: dict[str, Any], result: str | None = None) -> dict[str, Any]:
+    def _planned(self, method: str, path: str, parameters: dict[str, Any], result: str | None = None, host: str = INSTAGRAM_HOST) -> dict[str, Any]:
         call = {
             "method": method,
-            "url": f"{BASE_URL}/{path.lstrip('/')}",
+            "url": f"https://{host}/v23.0/{path.lstrip('/')}",
             "parameters": {**parameters, "access_token": "<token>"},
         }
         if result:
@@ -79,7 +97,12 @@ class InstagramDriver:
         expected_username = ctx.credentials.get("expected_username", "").strip().lstrip("@").casefold()
         if not expected_username:
             raise ConfigError("expected_username is required.", path="channels.instagram.expected_username")
-        identity = self._call("GET", "me", {"fields": "id,user_id,username"}, ctx)
+        if graph_host(ctx.credentials) == FACEBOOK_HOST:
+            # A system-user token's /me is the system user, so the Instagram
+            # account is read through its own node instead.
+            identity = self._call("GET", ig_user_id, {"fields": "id,username"}, ctx)
+        else:
+            identity = self._call("GET", "me", {"fields": "id,user_id,username"}, ctx)
         actual_username = str(identity.get("username") or "").strip().lstrip("@").casefold()
         actual_ids = {
             str(identity.get(key) or "").strip()
@@ -97,7 +120,7 @@ class InstagramDriver:
                 path="channels.instagram.ig_user_id",
             )
 
-    def _plan(self, post: PostData, urls: list[str], ig_user_id: str) -> list[dict[str, Any]]:
+    def _plan(self, post: PostData, urls: list[str], ig_user_id: str, host: str = INSTAGRAM_HOST) -> list[dict[str, Any]]:
         calls: list[dict[str, Any]] = []
         if post.kind == "carousel":
             for index, url in enumerate(urls, 1):
@@ -105,9 +128,9 @@ class InstagramDriver:
                     "is_carousel_item": "true",
                     "video_url" if media_type(url) == "video" else "image_url": url,
                 }
-                calls.append(self._planned("POST", f"{ig_user_id}/media", params, f"child_creation_id_{index}"))
+                calls.append(self._planned("POST", f"{ig_user_id}/media", params, f"child_creation_id_{index}", host=host))
                 if media_type(url) == "video":
-                    calls.append(self._planned("GET", f"{{child_creation_id_{index}}}", {"fields": "status_code"}))
+                    calls.append(self._planned("GET", f"{{child_creation_id_{index}}}", {"fields": "status_code"}, host=host))
             parent: dict[str, Any] = {
                 "media_type": "CAROUSEL",
                 "children": ",".join(f"{{child_creation_id_{i}}}" for i in range(1, len(urls) + 1)),
@@ -115,7 +138,7 @@ class InstagramDriver:
             }
             if post.collaborators:
                 parent["collaborators"] = ",".join(post.collaborators)
-            calls.append(self._planned("POST", f"{ig_user_id}/media", parent, "creation_id"))
+            calls.append(self._planned("POST", f"{ig_user_id}/media", parent, "creation_id", host=host))
         else:
             url_key = "video_url" if media_type(urls[0]) == "video" else "image_url"
             params = {url_key: urls[0]}
@@ -127,16 +150,16 @@ class InstagramDriver:
                     params["media_type"] = "REELS"
                 if post.collaborators:
                     params["collaborators"] = ",".join(post.collaborators)
-            calls.append(self._planned("POST", f"{ig_user_id}/media", params, "creation_id"))
+            calls.append(self._planned("POST", f"{ig_user_id}/media", params, "creation_id", host=host))
         calls.extend(
             [
-                self._planned("GET", "{creation_id}", {"fields": "status_code"}),
-                self._planned("POST", f"{ig_user_id}/media_publish", {"creation_id": "{creation_id}"}, "media_id"),
-                self._planned("GET", "{media_id}", {"fields": "permalink"}),
+                self._planned("GET", "{creation_id}", {"fields": "status_code"}, host=host),
+                self._planned("POST", f"{ig_user_id}/media_publish", {"creation_id": "{creation_id}"}, "media_id", host=host),
+                self._planned("GET", "{media_id}", {"fields": "permalink"}, host=host),
             ]
         )
         if post.first_comment:
-            calls.append(self._planned("POST", "{media_id}/comments", {"message": post.first_comment}))
+            calls.append(self._planned("POST", "{media_id}/comments", {"message": post.first_comment}, host=host))
         return calls
 
     def publish(self, post: PostData, attempt: AttemptData, ctx: Ctx) -> ReceiptData | Pending:
@@ -147,7 +170,7 @@ class InstagramDriver:
             self._verify_account(ctx, ig_user_id)
         urls = [ctx.media_url(item) for item in post.media]
         if ctx.dry_run:
-            calls = self._plan(post, urls, ig_user_id)
+            calls = self._plan(post, urls, ig_user_id, graph_host(ctx.credentials))
             ctx.transcript.extend(calls)
             return ReceiptData(
                 external_id=f"dry-run:instagram:{post.external_ref}",
