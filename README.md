@@ -80,6 +80,8 @@ token_env = "POSTDESK_FACEBOOK_TOKEN"
 
 `host_cmd` must return one public HTTP or HTTPS URL for local media. `notify_cmd` receives failures and uncertain outcomes. Both are argument arrays, so Postdesk does not invoke a shell.
 
+An Instagram channel talks to `graph.instagram.com` by default, which takes an Instagram-login token. A Meta system-user or Facebook-login token works only on `graph.facebook.com`; set `graph_host = "graph.facebook.com"` on that channel. The account check then reads the Instagram user node instead of `/me`.
+
 ## Supported posts
 
 | Network | Kinds | Notes |
