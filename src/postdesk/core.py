@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, Select, select, text
+from sqlalchemy import Engine, Select, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -187,13 +187,20 @@ def get_post(session: Session, post_id: int) -> Post:
     return row
 
 
-def approve_post(session: Session, post_id: int) -> Post:
-    row = get_post(session, post_id)
-    if row.status != "draft" or row.claim_token:
-        raise ClaimConflict("Only an unclaimed draft can be approved.", path="post_id")
-    row.status = "approved"
-    row.updated_at = utcnow()
+def approve_post(session: Session, post_id: int, *, at: str | None = None, now: bool = False) -> Post:
+    # The conditional write also protects against a worker claiming the row
+    # between the operator's read and approval.
+    values = {"status": "approved", "updated_at": utcnow()}
+    if at is not None or now:
+        values["scheduled_at"] = parse_time(at if not now else None)
+    changed = session.execute(
+        update(Post).where(Post.id == post_id, Post.status.in_(["draft", "approved"]), Post.claim_token.is_(None)).values(**values)
+    )
     session.commit()
+    session.expire_all()
+    row = get_post(session, post_id)
+    if changed.rowcount != 1 and row.status != "published":
+        raise ClaimConflict("Only an unclaimed draft or approved post can be scheduled.", path="post_id")
     return row
 
 

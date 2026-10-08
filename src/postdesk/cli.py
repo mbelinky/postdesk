@@ -90,6 +90,9 @@ def build_parser() -> Parser:
     queue_approve = queue_commands.add_parser("approve")
     _store_arg(queue_approve)
     queue_approve.add_argument("post_id", type=int)
+    timing = queue_approve.add_mutually_exclusive_group()
+    timing.add_argument("--at", help="reschedule for an ISO timestamp")
+    timing.add_argument("--now", action="store_true", help="make this post due immediately")
     queue_approve.add_argument("--json", action="store_true")
     queue_retry = queue_commands.add_parser("retry")
     _store_arg(queue_retry)
@@ -110,6 +113,7 @@ def build_parser() -> Parser:
     run.add_argument("--json", action="store_true")
     run.add_argument("--due", action="store_true", required=True)
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--post", type=int, action="append", help="publish only these approved post IDs")
 
     rec = commands.add_parser("reconcile", help="resolve expired or uncertain attempts")
     _store_arg(rec)
@@ -221,7 +225,7 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             if args.queue_command == "show":
                 return {"ok": True, "post": serialize_post(get_post(session, args.post_id), session=session)}, 0
             if args.queue_command == "approve":
-                return {"ok": True, "post": serialize_post(approve_post(session, args.post_id))}, 0
+                return {"ok": True, "post": serialize_post(approve_post(session, args.post_id, at=args.at, now=args.now))}, 0
             if args.queue_command == "retry":
                 return {"ok": True, "post": serialize_post(retry_failed_post(session, args.post_id))}, 0
             if args.queue_command == "cancel":
@@ -234,7 +238,7 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 return {"ok": True, "created": False, "post": serialize_post(row, session=session)}, 0
             post_id = row.id
     if args.command == "run":
-        payload = run_due(engine, store, drivers, dry_run=args.dry_run)
+        payload = run_due(engine, store, drivers, dry_run=args.dry_run, only_ids=args.post)
         return _command_result(payload)
     if args.command == "reconcile":
         return reconcile(engine, store, drivers), 0

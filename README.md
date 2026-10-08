@@ -108,8 +108,8 @@ Postdesk never blindly retries an uncertain publish.
 ```text
 postdesk init          --store DIR
 postdesk tenant        add|list|show NAME
-postdesk queue         add|list|show|approve|cancel|preview
-postdesk run           --due [--dry-run]
+postdesk queue         add|list|show|approve [--now|--at ISO]|cancel|preview
+postdesk run           --due [--post ID] [--dry-run]
 postdesk reconcile
 postdesk publish       POST_FLAGS [--dry-run]
 postdesk edit          --receipt ID --caption-file FILE
@@ -118,6 +118,8 @@ postdesk insights      pull --tenant NAME [--since ISO]
 postdesk capabilities  --tenant NAME
 postdesk describe
 ```
+
+`queue approve ID --now` makes an approved row due now; `--at ISO` changes its time. Published rows stay published. Claimed or uncertain rows cannot be rescheduled. `run --due --post ID` publishes only that row.
 
 Every command supports `--json`. Invalid input exits with status 2, configuration errors with 3, network errors with 4, and claim conflicts with 5.
 
