@@ -24,6 +24,7 @@ class Post(Base):
     first_comment: Mapped[str | None] = mapped_column(Text)
     collaborators_json: Mapped[str] = mapped_column(Text, default="[]")
     link: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(Text)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(30), index=True, default="draft")
     claim_token: Mapped[str | None] = mapped_column(String(64), index=True)

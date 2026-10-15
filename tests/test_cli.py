@@ -33,7 +33,7 @@ def test_init_demo_capabilities_and_capability_gate(tmp_path, capsys):
     assert initialized["ok"] is True
     status, matrix = invoke(capsys, "capabilities", "--store", str(tmp_path), "--tenant", "demo", "--json")
     assert status == 0
-    assert set(matrix["channels"]) == {"facebook", "instagram"}
+    assert set(matrix["channels"]) == {"facebook", "instagram", "youtube"}
     assert matrix["channels"]["facebook"]["features"]["edit"] is True
     assert matrix["channels"]["instagram"]["features"]["edit"] is False
 

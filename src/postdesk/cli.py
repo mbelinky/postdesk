@@ -28,7 +28,8 @@ from .core import (
     serialize_post,
     serialize_receipt,
 )
-from .drivers import default_drivers
+from .drivers import CHANNELS, default_drivers
+from .drivers.youtube import DEFAULT_CLIENT_ID_ENV, DEFAULT_CLIENT_SECRET_ENV, authorize_channel
 from .errors import ConfigError, InvalidInput, PostdeskError, error_payload
 from .models import Receipt
 from .store import initialize, resolve_store
@@ -151,6 +152,15 @@ def build_parser() -> Parser:
     capabilities.add_argument("--json", action="store_true")
     capabilities.add_argument("--tenant", required=True)
 
+    auth = commands.add_parser("auth", help="one-time login that mints a channel refresh token")
+    auth.add_argument("--json", action="store_true")
+    auth_commands = auth.add_subparsers(dest="auth_command", required=True, parser_class=Parser)
+    auth_youtube = auth_commands.add_parser("youtube")
+    auth_youtube.add_argument("--client-id-env", default=DEFAULT_CLIENT_ID_ENV, help="environment variable holding the OAuth client id")
+    auth_youtube.add_argument("--client-secret-env", default=DEFAULT_CLIENT_SECRET_ENV, help="environment variable holding the OAuth client secret")
+    auth_youtube.add_argument("--no-browser", action="store_true", help="print the login link instead of opening a browser")
+    auth_youtube.add_argument("--json", action="store_true")
+
     describe = commands.add_parser("describe", help="describe the tool for agents")
     describe.add_argument("--json", action="store_true")
     return parser
@@ -158,9 +168,10 @@ def build_parser() -> Parser:
 
 def _post_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tenant", required=True)
-    parser.add_argument("--channel", required=True, choices=("instagram", "facebook"))
+    parser.add_argument("--channel", required=True, choices=CHANNELS)
     parser.add_argument("--kind", required=True)
     parser.add_argument("--media", action="append", default=[])
+    parser.add_argument("--title", help="YouTube title; defaults to the caption's first line")
     parser.add_argument("--caption-file")
     parser.add_argument("--first-comment-file")
     parser.add_argument("--collaborator", action="append", default=[])
@@ -192,6 +203,8 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     drivers = default_drivers()
     if args.command == "describe":
         return describe_payload(drivers), 0
+    if args.command == "auth":
+        return _auth_youtube(args), 0
     store = resolve_store(getattr(args, "store", None), init=args.command == "init")
     engine = initialize(store)
     if args.command == "init":
@@ -275,7 +288,35 @@ def _add_from_args(session: Session, store: Path, drivers: dict[str, Any], args:
         at=args.at,
         external_ref=args.external_ref,
         approved=approved,
+        title=args.title,
     )
+
+
+def _auth_youtube(args: argparse.Namespace) -> dict[str, Any]:
+    client_id = os.environ.get(args.client_id_env, "").strip()
+    client_secret = os.environ.get(args.client_secret_env, "").strip()
+    if not client_id or not client_secret:
+        raise ConfigError(
+            f"Set {args.client_id_env} and {args.client_secret_env} from the Google Cloud OAuth 'Desktop app' client.",
+            path="auth.youtube",
+        )
+    result = authorize_channel(
+        client_id=client_id,
+        client_secret=client_secret,
+        open_browser=not args.no_browser,
+        announce=lambda message: print(message, file=sys.stderr),
+    )
+    return {
+        "ok": True,
+        "channel_id": result["channel_id"],
+        "channel_title": result["channel_title"],
+        "handle": result["handle"],
+        "refresh_token": result["refresh_token"],
+        "next": (
+            "Store refresh_token in the environment variable named by channels.youtube.token_env "
+            "and put channel_id in channels.youtube.channel_id."
+        ),
+    }
 
 
 def _read_file(value: str, field: str) -> str:
@@ -340,6 +381,7 @@ def describe_payload(drivers: dict[str, Any]) -> dict[str, Any]:
             "delete": "Delete a receipt when the channel supports it.",
             "insights": ["pull"],
             "capabilities": "Return the per-channel capability matrix.",
+            "auth": ["youtube"],
             "describe": "Return this document.",
         },
         "exit_codes": {"0": "success", "2": "invalid input", "3": "configuration or credential error", "4": "network or API error", "5": "claim conflict"},

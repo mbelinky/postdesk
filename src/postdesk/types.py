@@ -52,6 +52,7 @@ class PostData:
     collaborators: list[str] = field(default_factory=list)
     link: str | None = None
     external_ref: str | None = None
+    title: str | None = None
 
 
 @dataclass

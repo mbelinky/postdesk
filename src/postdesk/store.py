@@ -47,9 +47,18 @@ def make_engine(path: Path) -> Engine:
     return engine
 
 
+# Columns added after a release, applied to databases created before them.
+ADDED_COLUMNS = (("posts", "title", "TEXT"),)
+
+
 def initialize(path: Path) -> Engine:
     engine = make_engine(path)
     Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        for table, column, ddl in ADDED_COLUMNS:
+            existing = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
     return engine
 
 

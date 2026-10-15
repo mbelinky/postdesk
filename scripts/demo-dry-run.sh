@@ -38,6 +38,21 @@ printf '%s\n' 'Dry-run proof caption' > "$demo_dir/caption.txt"
 "$python_bin" -m postdesk queue approve \
   --store "$demo_dir" 2 --json > "$demo_dir/facebook-approve.json"
 
+"$python_bin" -m postdesk queue add \
+  --store "$demo_dir" \
+  --tenant demo \
+  --channel youtube \
+  --kind video \
+  --media https://media.example/proof-video.mp4 \
+  --title "Proof video" \
+  --caption-file "$demo_dir/caption.txt" \
+  --external-ref proof-youtube-video \
+  --at 2020-01-01T00:00:00Z \
+  --json > "$demo_dir/youtube-add.json"
+
+"$python_bin" -m postdesk queue approve \
+  --store "$demo_dir" 3 --json > "$demo_dir/youtube-approve.json"
+
 "$python_bin" -m postdesk run \
   --store "$demo_dir" --due --dry-run --json > "$demo_dir/run.json"
 
@@ -70,11 +85,13 @@ summary = {
             load("instagram-approve.json")["post"]["status"] == "approved",
             load("facebook-add.json")["created"],
             load("facebook-approve.json")["post"]["status"] == "approved",
+            load("youtube-add.json")["created"],
+            load("youtube-approve.json")["post"]["status"] == "approved",
             run["ok"],
-            run["published"] == 2,
-            len(published["posts"]) == 2,
+            run["published"] == 3,
+            len(published["posts"]) == 3,
             reconciled["checked"] == 0,
-            set(capabilities["channels"]) == {"instagram", "facebook"},
+            set(capabilities["channels"]) == {"instagram", "facebook", "youtube"},
         ]
     ),
     "store": "temporary",

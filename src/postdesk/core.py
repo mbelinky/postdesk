@@ -26,6 +26,7 @@ POLL_LIMITS = {
     ("instagram", "reel"): (40, 3.0),
     ("instagram", "story"): (40, 3.0),
     ("facebook", "video"): (40, 5.0),
+    ("youtube", "video"): (40, 15.0),
 }
 
 
@@ -62,6 +63,7 @@ def add_post(
     at: str | None,
     external_ref: str | None,
     approved: bool = False,
+    title: str | None = None,
 ) -> tuple[Post, bool]:
     load_tenant(store, tenant)
     driver = drivers.get(channel)
@@ -84,6 +86,7 @@ def add_post(
         collaborators=[item.strip().lstrip("@") for item in collaborators],
         link=(link or "").strip() or None,
         external_ref=clean_ref,
+        title=" ".join((title or "").split()) or None,
     )
     problems = driver.validate(data)
     if problems:
@@ -99,6 +102,7 @@ def add_post(
         first_comment=data.first_comment,
         collaborators_json=json.dumps(data.collaborators),
         link=data.link,
+        title=data.title,
         scheduled_at=parse_time(at),
         status="approved" if approved else "draft",
         created_at=now,
@@ -130,6 +134,7 @@ def serialize_post(row: Post, *, session: Session | None = None) -> dict[str, An
         "first_comment": row.first_comment,
         "collaborators": json.loads(row.collaborators_json),
         "link": row.link,
+        "title": row.title,
         "at": _iso(row.scheduled_at),
         "status": row.status,
         "claimed": bool(row.claim_token),
@@ -652,6 +657,7 @@ def _post_data(post: Post) -> PostData:
         collaborators=json.loads(post.collaborators_json),
         link=post.link,
         external_ref=post.external_ref,
+        title=post.title,
     )
 
 

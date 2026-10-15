@@ -25,6 +25,13 @@ token_env = "POSTDESK_DEMO_INSTAGRAM_TOKEN"
 [channels.facebook]
 page_id = "demo-facebook-page"
 token_env = "POSTDESK_DEMO_FACEBOOK_TOKEN"
+
+[channels.youtube]
+channel_id = "demo-youtube-channel"
+token_env = "POSTDESK_DEMO_YOUTUBE_TOKEN"
+client_id_env = "POSTDESK_YOUTUBE_CLIENT_ID"
+client_secret_env = "POSTDESK_YOUTUBE_CLIENT_SECRET"
+privacy = "public"
 """
 
 
@@ -85,9 +92,12 @@ def add_tenant(store: Path, name: str, *, demo: bool = False) -> Path:
 
 def tenant_template(name: str) -> str:
     prefix = re.sub(r"[^A-Z0-9]", "_", name.upper())
-    return DEMO_CONFIG.replace("demo-instagram-user", "replace-me").replace(
-        "demo-facebook-page", "replace-me"
-    ).replace("POSTDESK_DEMO_", f"POSTDESK_{prefix}_")
+    return (
+        DEMO_CONFIG.replace("demo-instagram-user", "replace-me")
+        .replace("demo-facebook-page", "replace-me")
+        .replace("demo-youtube-channel", "replace-me")
+        .replace("POSTDESK_DEMO_", f"POSTDESK_{prefix}_")
+    )
 
 
 def load_tenant(store: Path, name: str) -> TenantConfig:

@@ -5,13 +5,13 @@
 [![Tests](https://github.com/mbelinky/postdesk/actions/workflows/test.yml/badge.svg)](https://github.com/mbelinky/postdesk/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6b6257.svg)](LICENSE)
 
-Postdesk is a local-first publishing desk for Instagram and Facebook. It queues, approves, schedules, publishes, and records what happened in a SQLite database.
+Postdesk is a local-first publishing desk for Instagram, Facebook, and YouTube. It queues, approves, schedules, publishes, and records what happened in a SQLite database.
 
 Publishing APIs fail at awkward moments. A request can time out after the network has accepted it, which makes an automatic retry dangerous. Postdesk records every attempt before it contacts a network. If the result is uncertain, it stops and asks the network what happened instead of posting twice.
 
 ## What it does
 
-- Queues drafts for Instagram and Facebook.
+- Queues drafts for Instagram, Facebook, and YouTube.
 - Requires approval before scheduled posts can run.
 - Shows the exact redacted API calls in dry-run mode without contacting Meta.
 - Stores attempts, remote identifiers, receipts, and raw network metrics.
@@ -76,11 +76,29 @@ token_env = "POSTDESK_INSTAGRAM_TOKEN"
 [channels.facebook]
 page_id = "replace-me"
 token_env = "POSTDESK_FACEBOOK_TOKEN"
+
+[channels.youtube]
+channel_id = "replace-me"
+token_env = "POSTDESK_YOUTUBE_TOKEN"
+client_id_env = "POSTDESK_YOUTUBE_CLIENT_ID"
+client_secret_env = "POSTDESK_YOUTUBE_CLIENT_SECRET"
+privacy = "public"
+# optional: expected_handle = "@yourchannel", playlist_id = "PL...", category_id = "22", default_language = "en"
 ```
 
 `host_cmd` must return one public HTTP or HTTPS URL for local media. `notify_cmd` receives failures and uncertain outcomes. Both are argument arrays, so Postdesk does not invoke a shell.
 
 An Instagram channel talks to `graph.instagram.com` by default, which takes an Instagram-login token. A Meta system-user or Facebook-login token works only on `graph.facebook.com`; set `graph_host = "graph.facebook.com"` on that channel. The account check then reads the Instagram user node instead of `/me`.
+
+### YouTube
+
+YouTube takes the video bytes directly, so a local path uploads without `host_cmd`; an HTTP(S) URL is downloaded first. One Google Cloud OAuth client serves every tenant, and each tenant binds its own channel:
+
+1. In Google Cloud Console enable "YouTube Data API v3", set the OAuth consent screen to External with publishing status "In production" (in "Testing", Google revokes the login after 7 days), and create an OAuth client of type "Desktop app".
+2. Export the client id and secret in the two `client_*_env` variables, then run `postdesk auth youtube` on a machine with a browser and sign in as the channel owner. It prints the `channel_id` for `config.toml` and the refresh token to store in `token_env`.
+3. Until Google approves the project's YouTube API compliance audit, every upload is forced to private whatever `privacy` says.
+
+`--title` sets the video title (100 characters); without it the caption's first line, minus hashtags, is used and the caption becomes the description. A vertical video under three minutes is listed as a Short automatically. The default quota allows about six uploads a day.
 
 ## Supported posts
 
@@ -88,6 +106,7 @@ An Instagram channel talks to `graph.instagram.com` by default, which takes an I
 | --- | --- | --- |
 | Instagram | photo, carousel, reel, story | First comments, collaborators, quota checks, and raw media insights when Meta returns them |
 | Facebook | text, link, photo, album, video | Caption editing, deletion, video polling, and raw media insights |
+| YouTube | video | Title plus description, first comment, playlist add, processing polling, description editing, deletion, and view/like/comment counts |
 
 Run `postdesk capabilities --store STORE --tenant NAME --json` to read the exact capability matrix used by validation.
 
@@ -116,6 +135,7 @@ postdesk edit          --receipt ID --caption-file FILE
 postdesk delete        --receipt ID
 postdesk insights      pull --tenant NAME [--since ISO]
 postdesk capabilities  --tenant NAME
+postdesk auth          youtube [--no-browser]
 postdesk describe
 ```
 
