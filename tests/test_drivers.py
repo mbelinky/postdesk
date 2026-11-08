@@ -273,10 +273,40 @@ def test_facebook_edit_delete_and_raw_insights_contract():
     transport.assert_consumed()
 
 
-def test_instagram_raw_insights_contract():
-    raw = {"name": "reach", "values": [{"value": 42}]}
-    driver = InstagramDriver(FixtureTransport([{"data": [raw]}]))
+def test_instagram_insights_fall_back_to_single_metrics_when_meta_refuses_the_list():
+    from postdesk.drivers.instagram import METRICS_BY_PRODUCT
+    from postdesk.errors import ApiError
+
+    feed = METRICS_BY_PRODUCT["FEED"]
+    refused = ApiError("(#100) metric[4] must be one of the following values: ...", definitive=True)
+    singles = [
+        refused if name == "reposts" else {"data": [{"name": name, "values": [{"value": 1}]}]}
+        for name in feed
+    ]
+    breakdown = {"data": [{"name": "profile_activity", "total_value": {"value": 9, "breakdowns": []}}]}
+    transport = FixtureTransport([refused, *singles, breakdown])
+    driver = InstagramDriver(transport)
     ctx, _ = context(channel="instagram")
-    metrics = driver.insights([ReceiptData("ig-post")], ctx)
-    assert metrics[0].raw == raw
-    assert metrics[0].receipt_external_id == "ig-post"
+    metrics = driver.insights([ReceiptData("ig-post", kind="carousel")], ctx)
+    names = [metric.name for metric in metrics]
+    assert transport.calls[0]["parameters"]["metric"] == ",".join(feed)
+    assert "saved" in names and "reposts" not in names
+    assert names[-1] == "profile_activity_by_action_type"
+    assert metrics[-1].value == {"value": 9, "breakdowns": []}
+    transport.assert_consumed()
+
+
+def test_instagram_insights_skip_an_expired_story_and_keep_reading_the_rest():
+    from postdesk.errors import ApiError
+
+    gone = ApiError("Unsupported get request. Object with ID '1' does not exist, cannot be loaded due to missing permissions", definitive=True)
+    feed = {"data": [{"name": "reach", "values": [{"value": 1096}]}]}
+    breakdown = {"data": []}
+    transport = FixtureTransport([gone, feed, breakdown])
+    driver = InstagramDriver(transport)
+    ctx, _ = context(channel="instagram")
+    metrics = driver.insights([ReceiptData("story-1", kind="story"), ReceiptData("post-1", kind="photo")], ctx)
+    assert "replies" in transport.calls[0]["parameters"]["metric"]
+    assert [(m.receipt_external_id, m.name, m.value) for m in metrics] == [("post-1", "reach", [{"value": 1096}])]
+    transport.assert_consumed()
+

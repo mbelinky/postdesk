@@ -39,7 +39,26 @@ def graph_host(credentials: dict[str, str]) -> str:
             path="channels.instagram.graph_host",
         )
     return host
-METRICS = ("views", "reach", "likes", "comments", "saves")
+# Media insight metrics Meta accepts per media product type (Graph v23.0).
+# Feed was verified against live Can Brull photo and carousel posts on
+# 2026-11-08; a request naming any metric Meta rejects fails as a whole, so
+# insights() falls back to one metric per request when Meta refuses a list.
+_ENGAGEMENT = ("views", "reach", "likes", "comments", "saved", "shares", "reposts", "total_interactions")
+_PROFILE = ("follows", "profile_visits", "profile_activity")
+METRICS_BY_PRODUCT = {
+    "FEED": _ENGAGEMENT + _PROFILE,
+    "REELS": _ENGAGEMENT
+    + _PROFILE
+    + ("ig_reels_avg_watch_time", "ig_reels_video_view_total_time", "reels_skip_rate", "crossposted_views", "facebook_views"),
+    "STORY": ("views", "reach", "replies", "shares", "total_interactions", "navigation") + _PROFILE,
+}
+# Extra breakdown requests: (metric, breakdown, product types).
+BREAKDOWNS = (
+    ("profile_activity", "action_type", ("FEED", "REELS", "STORY")),
+    ("navigation", "story_navigation_action_type", ("STORY",)),
+)
+PRODUCT_BY_KIND = {"photo": "FEED", "carousel": "FEED", "reel": "REELS", "story": "STORY"}
+METRICS = METRICS_BY_PRODUCT["FEED"]
 
 
 class InstagramDriver:
@@ -293,23 +312,66 @@ class InstagramDriver:
         raise InvalidInput("instagram.delete is not supported.", path="capabilities.instagram.features.delete")
 
     def insights(self, receipts: list[ReceiptData], ctx: Ctx) -> list[MetricData]:
+        """Pull every media metric Meta offers for each receipt's product type.
+
+        A story is only readable while it is live: once Meta answers that the
+        object no longer exists, the receipt is skipped and the rest continue.
+        """
         fetched_at = datetime.now(timezone.utc)
         result: list[MetricData] = []
         for receipt in receipts:
-            payload = self._call("GET", f"{receipt.external_id}/insights", {"metric": ",".join(METRICS)}, ctx)
-            for item in payload.get("data", []):
-                if isinstance(item, dict) and item.get("name"):
-                    value = item.get("values", item.get("value"))
-                    result.append(
-                        MetricData(
-                            str(item["name"]),
-                            value,
-                            fetched_at,
-                            item,
-                            receipt.external_id,
-                        )
+            product = PRODUCT_BY_KIND.get(receipt.kind or "", "FEED")
+            try:
+                items = self._metric_items(receipt.external_id, METRICS_BY_PRODUCT[product], ctx)
+                for metric, breakdown, products in BREAKDOWNS:
+                    if product in products:
+                        items += [
+                            {**item, "name": f"{item['name']}_by_{breakdown}"}
+                            for item in self._metric_items(receipt.external_id, (metric,), ctx, breakdown=breakdown)
+                        ]
+            except ApiError as exc:
+                if _media_gone(exc):
+                    continue
+                raise
+            for item in items:
+                result.append(
+                    MetricData(
+                        str(item["name"]),
+                        item.get("values", item.get("total_value")),
+                        fetched_at,
+                        item,
+                        receipt.external_id,
                     )
+                )
         return result
+
+    def _metric_items(
+        self, media_id: str, metrics: tuple[str, ...], ctx: Ctx, *, breakdown: str | None = None
+    ) -> list[dict[str, Any]]:
+        parameters = {"metric": ",".join(metrics)}
+        if breakdown:
+            parameters["breakdown"] = breakdown
+        try:
+            payload = self._call("GET", f"{media_id}/insights", parameters, ctx)
+        except ApiError as exc:
+            if not _metric_refused(exc):
+                raise
+            if len(metrics) == 1:
+                return []
+            items: list[dict[str, Any]] = []
+            for metric in metrics:
+                items += self._metric_items(media_id, (metric,), ctx, breakdown=breakdown)
+            return items
+        return [item for item in payload.get("data", []) if isinstance(item, dict) and item.get("name")]
+
+def _metric_refused(exc: ApiError) -> bool:
+    detail = str(exc).lower()
+    return "(#100)" in detail and "metric" in detail
+
+
+def _media_gone(exc: ApiError) -> bool:
+    detail = str(exc).lower()
+    return exc.not_found or "does not exist, cannot be loaded" in detail
 
 
 def _id(payload: dict[str, Any], label: str) -> str:

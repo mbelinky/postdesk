@@ -592,7 +592,7 @@ def pull_insights(engine: Engine, store: Path, drivers: dict[str, Any], tenant: 
             credentials = config.channel(channel, dry_run=False)
             driver = drivers[channel]
             values = driver.insights(
-                [ReceiptData(row.external_id, row.permalink, json.loads(row.raw_json)) for row in channel_rows],
+                [ReceiptData(row.external_id, row.permalink, json.loads(row.raw_json), row.post.kind) for row in channel_rows],
                 _context(config, credentials, lambda _: None, False, []),
             )
             by_external = {row.external_id: row for row in channel_rows}

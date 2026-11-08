@@ -68,6 +68,7 @@ class ReceiptData:
     external_id: str
     permalink: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    kind: str | None = None
 
 
 @dataclass
