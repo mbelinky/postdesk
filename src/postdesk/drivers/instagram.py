@@ -337,7 +337,7 @@ class InstagramDriver:
                 result.append(
                     MetricData(
                         str(item["name"]),
-                        item.get("values", item.get("total_value")),
+                        _metric_value(item),
                         fetched_at,
                         item,
                         receipt.external_id,
@@ -363,6 +363,13 @@ class InstagramDriver:
                 items += self._metric_items(media_id, (metric,), ctx, breakdown=breakdown)
             return items
         return [item for item in payload.get("data", []) if isinstance(item, dict) and item.get("name")]
+
+def _metric_value(item: dict[str, Any]) -> Any:
+    # A breakdown answer keeps the per-dimension counts under total_value.
+    if "_by_" in str(item.get("name")) and "total_value" in item:
+        return item["total_value"]
+    return item.get("values", item.get("total_value"))
+
 
 def _metric_refused(exc: ApiError) -> bool:
     detail = str(exc).lower()
