@@ -302,10 +302,12 @@ def test_instagram_insights_skip_an_expired_story_and_keep_reading_the_rest():
     gone = ApiError("Unsupported get request. Object with ID '1' does not exist, cannot be loaded due to missing permissions", definitive=True)
     feed = {"data": [{"name": "reach", "values": [{"value": 1096}]}]}
     breakdown = {"data": []}
-    transport = FixtureTransport([gone, feed, breakdown])
+    deleted = ApiError("(#100) Tried accessing nonexisting field (insights)", definitive=True)
+    transport = FixtureTransport([gone, deleted, feed, breakdown])
     driver = InstagramDriver(transport)
     ctx, _ = context(channel="instagram")
-    metrics = driver.insights([ReceiptData("story-1", kind="story"), ReceiptData("post-1", kind="photo")], ctx)
+    receipts = [ReceiptData("story-1", kind="story"), ReceiptData("old-1", kind="carousel"), ReceiptData("post-1", kind="photo")]
+    metrics = driver.insights(receipts, ctx)
     assert "replies" in transport.calls[0]["parameters"]["metric"]
     assert [(m.receipt_external_id, m.name, m.value) for m in metrics] == [("post-1", "reach", [{"value": 1096}])]
     transport.assert_consumed()

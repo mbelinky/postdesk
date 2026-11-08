@@ -371,7 +371,9 @@ def _metric_refused(exc: ApiError) -> bool:
 
 def _media_gone(exc: ApiError) -> bool:
     detail = str(exc).lower()
-    return exc.not_found or "does not exist, cannot be loaded" in detail
+    # Expired stories answer "does not exist"; deleted or unreadable media
+    # answer "nonexisting field (insights)".
+    return exc.not_found or "does not exist, cannot be loaded" in detail or "nonexisting field (insights)" in detail
 
 
 def _id(payload: dict[str, Any], label: str) -> str:
