@@ -119,6 +119,11 @@ def build_parser() -> Parser:
     queue_retry = queue_commands.add_parser("retry")
     _store_arg(queue_retry)
     queue_retry.add_argument("post_id", type=int)
+    queue_retry.add_argument(
+        "--draft",
+        action="store_true",
+        help="return to draft and require explicit approval",
+    )
     queue_retry.add_argument("--json", action="store_true")
     queue_cancel = queue_commands.add_parser("cancel")
     _store_arg(queue_cancel)
@@ -277,7 +282,12 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                     ),
                 }, 0
             if args.queue_command == "retry":
-                return {"ok": True, "post": serialize_post(retry_failed_post(session, args.post_id))}, 0
+                return {
+                    "ok": True,
+                    "post": serialize_post(
+                        retry_failed_post(session, args.post_id, draft=args.draft)
+                    ),
+                }, 0
             if args.queue_command == "cancel":
                 return {"ok": True, "post": serialize_post(cancel_post(session, args.post_id))}, 0
             rows = list_posts(session, status=args.status, tenant=args.tenant)
@@ -406,11 +416,25 @@ def describe_payload(drivers: dict[str, Any]) -> dict[str, Any]:
         "tool": "postdesk",
         "version": __version__,
         "purpose": "Queue, approve, schedule, publish at most once, reconcile, and pull raw insights for tenant-configured social channels.",
-        "store": {"type": "sqlite", "argument": "--store", "environment": "POSTDESK_STORE"},
+        "store": {
+            "type": "sqlite",
+            "argument": "--store",
+            "environment": "POSTDESK_STORE",
+        },
         "commands": {
             "init": "Create the SQLite store and demo tenant.",
             "tenant": ["add", "list", "show"],
-            "queue": ["add", "list", "show", "approve", "unapprove", "reschedule", "retry", "cancel", "preview"],
+            "queue": [
+                "add",
+                "list",
+                "show",
+                "approve",
+                "unapprove",
+                "reschedule",
+                "retry",
+                "cancel",
+                "preview",
+            ],
             "run": "Publish due approved posts.",
             "reconcile": "Resolve expired leases and uncertain attempts without blind retry.",
             "publish": "Publish immediately without an approval gate.",
@@ -421,7 +445,17 @@ def describe_payload(drivers: dict[str, Any]) -> dict[str, Any]:
             "auth": ["youtube"],
             "describe": "Return this document.",
         },
-        "exit_codes": {"0": "success", "2": "invalid input", "3": "configuration or credential error", "4": "network or API error", "5": "claim conflict"},
+        "exit_codes": {
+            "0": "success",
+            "2": "invalid input",
+            "3": "configuration or credential error",
+            "4": "network or API error",
+            "5": "claim conflict",
+        },
+        "queue_usage": {
+            "retry": "retry ID [--draft]: release a safe, unclaimed failed post to approved, or to draft with --draft so explicit approval is required. Refuse receipts, pending or uncertain attempts, and recorded provider objects.",
+            "cancel": "cancel ID: atomically cancel only an unclaimed draft or approved post; otherwise exit 5 with claim_conflict.",
+        },
         "at_most_once": {
             "lease": True,
             "durable_attempt_before_network": True,

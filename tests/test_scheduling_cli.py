@@ -78,6 +78,56 @@ def test_held_due_post_publishes_only_after_approval(queue_cli, tmp_path):
     assert len(published["receipts"]) == 1
 
 
+@pytest.mark.parametrize("draft", [False, True], ids=["approved", "draft"])
+def test_retry_failed_due_post_respects_approval(queue_cli, tmp_path, draft):
+    cli = queue_cli
+    media = tmp_path / "photo.jpg"
+    media.write_bytes(b"fixture")
+    post_id = add_scheduled_post(cli, tmp_path, at="2000-01-01T10:00:00Z", media=media)[
+        "id"
+    ]
+    cli("queue", "approve", post_id)
+    # Local media without a hosting hook fails before any provider request.
+    cli("run", "--due", "--dry-run", status=3)
+    failed = cli("queue", "show", post_id)["post"]
+    assert failed["status"] == "failed"
+    assert len(failed["attempts"]) == 1
+    assert failed["receipts"] == []
+
+    config = tmp_path / "tenants" / "demo" / "config.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "host_cmd = []",
+            "host_cmd = "
+            + json.dumps(
+                [
+                    sys.executable,
+                    "-c",
+                    "print('https://media.example/photo.jpg')",
+                    "{path}",
+                ]
+            ),
+        ),
+        encoding="utf-8",
+    )
+    retried = cli("queue", "retry", post_id, *(["--draft"] if draft else []))["post"]
+    assert retried["status"] == ("draft" if draft else "approved")
+    assert retried["at"] == failed["at"]
+    assert retried["error"] is None
+    if draft:
+        run = cli("run", "--due", "--dry-run")
+        assert run["due"] == run["published"] == 0
+        waiting = cli("queue", "show", post_id)["post"]
+        assert waiting["attempts"] == failed["attempts"]
+        assert waiting["receipts"] == []
+        cli("queue", "approve", post_id)
+    assert cli("run", "--due", "--dry-run")["published"] == 1
+    published = cli("queue", "show", post_id)["post"]
+    assert published["status"] == "published"
+    assert len(published["attempts"]) == 2
+    assert len(published["receipts"]) == 1
+
+
 def test_unapprove_hold_timing_and_list_flag(queue_cli, tmp_path):
     cli = queue_cli
     initial = add_scheduled_post(cli, tmp_path)
@@ -118,6 +168,7 @@ def test_unapprove_hold_timing_and_list_flag(queue_cli, tmp_path):
     assert cli("queue", "list")["posts"] == [approved]
     described = cli("describe")
     assert {"unapprove", "reschedule"} <= set(described["commands"]["queue"])
+    assert "--draft" in described["queue_usage"]["retry"]
     assert described["version"] == "0.3.0"
 
 
@@ -217,6 +268,7 @@ def test_queue_changes_refuse_a_post_owned_by_the_publisher(queue_cli, tmp_path)
         "results = [invoke('show', post_id),\n"
         "           invoke('unapprove', post_id, '--hold', '--at', '2099-10-11T10:00:00Z'),\n"
         "           invoke('reschedule', post_id, '--at', '2099-10-11T10:00:00Z'),\n"
+        "           invoke('cancel', post_id),\n"
         "           invoke('show', post_id)]\n"
         "(store / 'claimed-results.json').write_text(json.dumps(results))\n"
         "print('https://media.example/photo.jpg')\n",
@@ -232,12 +284,12 @@ def test_queue_changes_refuse_a_post_owned_by_the_publisher(queue_cli, tmp_path)
     )
     cli("queue", "approve", post_id)
     assert cli("run", "--due", "--dry-run")["published"] == 1
-    before, unapprove, reschedule, after = json.loads(
+    before, unapprove, reschedule, cancel, after = json.loads(
         (tmp_path / "claimed-results.json").read_text()
     )
     assert before["payload"]["post"]["claimed"] is True
     assert before["payload"]["post"]["status"] == "publishing"
-    for refused in (unapprove, reschedule):
+    for refused in (unapprove, reschedule, cancel):
         assert refused["status"] == 5
         assert refused["payload"]["error"]["kind"] == "claim_conflict"
     assert after == before

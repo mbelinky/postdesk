@@ -10,7 +10,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from postdesk.config import DEMO_CONFIG
-from postdesk.core import add_post, approve_post, reconcile, retry_failed_post, run_due, utcnow
+from postdesk.core import (
+    add_post,
+    approve_post,
+    cancel_post,
+    claim_post,
+    reconcile,
+    retry_failed_post,
+    run_due,
+    utcnow,
+)
 from postdesk.errors import ClaimConflict
 from postdesk.models import Post, PublishAttempt, Receipt
 from postdesk.store import initialize
@@ -110,7 +119,26 @@ def test_parallel_workers_claim_once_and_reconcile_is_idempotent(tmp_path):
     assert reconcile(engine, store, {"fake": driver}) == {"ok": True, "checked": 0, "results": []}
 
 
-def test_retry_failed_post_requires_no_provider_object(tmp_path):
+def test_cancel_refuses_a_claim_acquired_after_the_operator_read(tmp_path):
+    store, engine = make_store(tmp_path)
+    driver = FakeDriver(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        post_id = enqueue(session, store, driver)
+        # Keep the operator's approved row cached while another worker claims it.
+        stale = session.get(Post, post_id)
+        token = claim_post(engine, post_id)
+        assert stale.status == "approved"
+        assert stale.claim_token is None
+        with pytest.raises(ClaimConflict):
+            cancel_post(session, post_id)
+    with Session(engine) as session:
+        claimed = session.get(Post, post_id)
+        assert claimed.status == "publishing"
+        assert claimed.claim_token == token
+
+
+@pytest.mark.parametrize("draft", [False, True], ids=["approved", "draft"])
+def test_retry_failed_post_requires_no_provider_object(tmp_path, draft):
     store, engine = make_store(tmp_path)
     driver = FakeDriver(engine)
     with Session(engine, expire_on_commit=False) as session:
@@ -133,15 +161,15 @@ def test_retry_failed_post_requires_no_provider_object(tmp_path):
         )
         session.add(attempt)
         session.commit()
-        retried = retry_failed_post(session, post_id)
-        assert retried.status == "approved"
+        retried = retry_failed_post(session, post_id, draft=draft)
+        assert retried.status == ("draft" if draft else "approved")
         assert retried.error is None
 
         retried.status = "failed"
         attempt.remote_ids_json = json.dumps({"network_started": True, "creation_id": "provider-1"})
         session.commit()
         with pytest.raises(ClaimConflict, match="provider object"):
-            retry_failed_post(session, post_id)
+            retry_failed_post(session, post_id, draft=draft)
 
 
 def test_external_ref_is_idempotent(tmp_path):

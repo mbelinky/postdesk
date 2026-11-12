@@ -127,10 +127,11 @@ Postdesk never blindly retries an uncertain publish.
 ```text
 postdesk init          --store DIR
 postdesk tenant        add|list|show NAME
-postdesk queue         add|list|show|retry|cancel|preview
+postdesk queue         add|list|show|cancel|preview
 postdesk queue         approve ID [--now|--at ISO]
 postdesk queue         unapprove ID [--hold] [--at ISO]
 postdesk queue         reschedule ID --at ISO
+postdesk queue         retry ID [--draft]
 postdesk run           --due [--post ID] [--dry-run]
 postdesk reconcile
 postdesk publish       POST_FLAGS [--dry-run]
@@ -147,6 +148,10 @@ postdesk describe
 `queue unapprove ID` returns an unclaimed approved post to draft. Add `--hold` to mark it held and `--at ISO` to change its time in the same step. Drafts, including held posts, stay outside the publish path. Approving a draft clears its hold and keeps its time unless `--at` or `--now` is given.
 
 `queue reschedule ID --at ISO` changes the time of an unclaimed draft or approved post, keeping its status and hold flag. Other states refuse the change with exit status 5. Queue JSON includes `held` as a boolean.
+
+`queue retry ID` returns a safe, unclaimed failed post to approved. Add `--draft` to return it to draft in the same write, so even an overdue post waits for explicit approval. Both forms refuse posts with receipts, pending or uncertain attempts, or recorded provider objects.
+
+`queue cancel ID` atomically cancels only an unclaimed draft or approved post. A publisher claim prevents cancellation, including a claim acquired during the cancellation request; the command exits with status 5 and leaves the claimed post unchanged.
 
 Every command supports `--json`. Invalid input exits with status 2, configuration errors with 3, network errors with 4, and claim conflicts with 5.
 
