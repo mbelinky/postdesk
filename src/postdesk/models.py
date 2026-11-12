@@ -27,6 +27,7 @@ class Post(Base):
     title: Mapped[str | None] = mapped_column(Text)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(30), index=True, default="draft")
+    held: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     claim_token: Mapped[str | None] = mapped_column(String(64), index=True)
     claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)

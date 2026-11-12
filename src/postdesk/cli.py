@@ -22,11 +22,13 @@ from .core import (
     list_posts,
     pull_insights,
     reconcile,
+    reschedule_post,
     retry_failed_post,
     run_due,
     serialize_metric,
     serialize_post,
     serialize_receipt,
+    unapprove_post,
 )
 from .drivers import CHANNELS, default_drivers
 from .drivers.youtube import DEFAULT_CLIENT_ID_ENV, DEFAULT_CLIENT_SECRET_ENV, authorize_channel
@@ -95,6 +97,25 @@ def build_parser() -> Parser:
     timing.add_argument("--at", help="reschedule for an ISO timestamp")
     timing.add_argument("--now", action="store_true", help="make this post due immediately")
     queue_approve.add_argument("--json", action="store_true")
+    queue_unapprove = queue_commands.add_parser(
+        "unapprove", help="return an approved post to draft"
+    )
+    _store_arg(queue_unapprove)
+    queue_unapprove.add_argument("post_id", type=int)
+    queue_unapprove.add_argument(
+        "--hold", action="store_true", help="mark the draft as held"
+    )
+    queue_unapprove.add_argument("--at", help="reschedule for an ISO timestamp")
+    queue_unapprove.add_argument("--json", action="store_true")
+    queue_reschedule = queue_commands.add_parser(
+        "reschedule", help="change a draft or approved post's time"
+    )
+    _store_arg(queue_reschedule)
+    queue_reschedule.add_argument("post_id", type=int)
+    queue_reschedule.add_argument(
+        "--at", required=True, help="reschedule for an ISO timestamp"
+    )
+    queue_reschedule.add_argument("--json", action="store_true")
     queue_retry = queue_commands.add_parser("retry")
     _store_arg(queue_retry)
     queue_retry.add_argument("post_id", type=int)
@@ -239,6 +260,22 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 return {"ok": True, "post": serialize_post(get_post(session, args.post_id), session=session)}, 0
             if args.queue_command == "approve":
                 return {"ok": True, "post": serialize_post(approve_post(session, args.post_id, at=args.at, now=args.now))}, 0
+            if args.queue_command == "unapprove":
+                return {
+                    "ok": True,
+                    "post": serialize_post(
+                        unapprove_post(
+                            session, args.post_id, hold=args.hold, at=args.at
+                        )
+                    ),
+                }, 0
+            if args.queue_command == "reschedule":
+                return {
+                    "ok": True,
+                    "post": serialize_post(
+                        reschedule_post(session, args.post_id, at=args.at)
+                    ),
+                }, 0
             if args.queue_command == "retry":
                 return {"ok": True, "post": serialize_post(retry_failed_post(session, args.post_id))}, 0
             if args.queue_command == "cancel":
@@ -373,7 +410,7 @@ def describe_payload(drivers: dict[str, Any]) -> dict[str, Any]:
         "commands": {
             "init": "Create the SQLite store and demo tenant.",
             "tenant": ["add", "list", "show"],
-            "queue": ["add", "list", "show", "approve", "retry", "cancel", "preview"],
+            "queue": ["add", "list", "show", "approve", "unapprove", "reschedule", "retry", "cancel", "preview"],
             "run": "Publish due approved posts.",
             "reconcile": "Resolve expired leases and uncertain attempts without blind retry.",
             "publish": "Publish immediately without an approval gate.",

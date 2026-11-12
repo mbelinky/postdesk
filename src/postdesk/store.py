@@ -48,7 +48,10 @@ def make_engine(path: Path) -> Engine:
 
 
 # Columns added after a release, applied to databases created before them.
-ADDED_COLUMNS = (("posts", "title", "TEXT"),)
+ADDED_COLUMNS = (
+    ("posts", "title", "TEXT"),
+    ("posts", "held", "INTEGER NOT NULL DEFAULT 0"),
+)
 
 
 def initialize(path: Path) -> Engine:
